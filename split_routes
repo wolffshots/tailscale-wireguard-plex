@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# Check if at least two arguments are provided (action + at least one domain)
+if [ $# -lt 4 ]; then
+    echo "Usage: $0 <action> <table> <pref> <domain1> [domain2] [...]"
+    echo "action: add, del, refresh"
+    echo "Example: $0 refresh plexroute 60 plex.tv app.plex.tv"
+    exit 1
+fi
+
+# Configuration variables
+ACTION=$1  				    # First argument is the action
+shift  					    # Remove the first argument
+TABLE=$1				    # Table to route through
+shift					    # Remove the first argument
+PREF=$1  				    # Preference for the rules
+shift					    # Remove the first argument, so now it should just be domains left
+GATEWAY="192.168.88.1"		# Gateway to route through
+INTERFACE="enp3s0"			# Interface to route through
+DOMAINS=("$@")  			# Remaining arguments are treated as domains
+echo action $ACTION
+echo table $TABLE
+echo pref $PREF
+echo domains ${DOMAINS[@]}
+
+# Function to clear existing rules and routes for the table
+clearRulesAndRoutes() {
+    echo "Clearing existing rules and routes for table $TABLE..."
+    # Find rules associated with the 'plexroute' table and delete them
+    /sbin/ip rule show | grep "lookup $TABLE" | while read -r rule; do
+        # Extract the from and to parts
+        from=$(echo $rule | grep -oP 'from \S+')
+        to=$(echo $rule | grep -oP 'to \S+')
+        # Delete the rule, using the extracted parts for specificity
+        sudo /sbin/ip rule del $from $to table $TABLE
+    done
+
+    # Clear routes from the table
+    /sbin/ip route show table $TABLE | while read -r route; do
+        sudo /sbin/ip route del $route table $TABLE
+    done
+}
+
+# Function to add routes and rules for each IP address of a domain
+addRoutesAndRules() {
+    for domain in "${DOMAINS[@]}"; do
+        echo "Processing domain: $domain"
+        
+        # Get IP addresses for the domain
+        IPs=$(dig +short $domain)
+
+        if [ -z "$IPs" ]; then  # Check if IPs is empty
+            echo "No IPs found for domain $domain. Skipping..."
+            continue  # Skip to the next domain
+        fi
+
+        # Add routes and rules for each IP address
+        for ip in $IPs; do
+            if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then  # Simple check for IPv4 address
+                echo "Adding route and rule for $ip..."
+                sudo /sbin/ip route add $ip via $GATEWAY dev $INTERFACE table $TABLE
+                sudo /sbin/ip rule add to $ip pref $PREF table $TABLE
+            else
+                echo "Skipping non-IPv4 address: $ip"
+            fi
+        done
+    done
+}
+
+# Main
+case $ACTION in
+    add)
+        addRoutesAndRules
+        ;;
+    del)
+        clearRulesAndRoutes
+        ;;
+    refresh)
+        clearRulesAndRoutes
+        addRoutesAndRules
+        ;;
+    *)
+        echo "Invalid action specified. Please use 'add', 'del', or 'refresh'."
+        exit 1
+        ;;
+esac
+
+echo "Operation complete."
+
