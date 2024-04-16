@@ -53,14 +53,16 @@ The first way is a little more robust in case IPs change but is has some securit
     After=wg-quick@wg0.service tailscaled.service
 
     [Service]
-    ExecStartPre=-/usr/local/bin/split_routes refresh plexroute 60 plex.tv app.plex.tv
-    ExecStop=-/usr/local/bin/split_routes del plexroute 60 plex.tv app.plex.tv
+    ExecStartPre=-/usr/local/bin/split_routes refresh plexroute 60 plex.tv app.plex.tv metadata.provider.plex.tv v4.plex.tv resources-cdn.plexapp.com meta.plex.tv download.plex.tv assets.plex.tv analytics.plex.tv plex.direct
+    ExecStop=-/usr/local/bin/split_routes del plexroute
     ```
 
-3. Create a `sudoer` file for the `plex` user to use `sudo ip route` and `sudo ip rule` without a password for the script.
+    You may need to add `<your public ip>.<identifier>.plex.direct` and `<server ip>.<identifier>.plex.direct` to the start and stop script list. I got the identifier from my Plex logs but am not 100% sure of the meaning of it.
+
+3. Create a `sudoer` file for the `plex` user to use `sudo ip route`, `sudo ip rule` and `sudo iptables ... --set-mark 1` without a password for the script.
     `sudo vim /etc/sudoers.d/plex` 
     ```
-    plex ALL=(ALL) NOPASSWD: /sbin/ip route add *, /sbin/ip route del *, /sbin/ip rule add to *, /sbin/ip rule del to *, /sbin/ip rule del from *
+    plex ALL=(ALL) NOPASSWD: /sbin/ip route add *, /sbin/ip route del *, /sbin/ip rule add to *, /sbin/ip rule del to *, /sbin/ip rule del from *, /usr/sbin/iptables -t mangle -A PREROUTING -p tcp --dport 32400 -j MARK --set-mark 1, /usr/sbin/iptables -t mangle -D PREROUTING -p tcp --dport 32400 -j MARK --set-mark 1, /usr/sbin/iptables -t mangle -A OUTPUT -p tcp --sport 32400 ! -d 192.168.88.0/24 -j MARK --set-mark 1, /usr/sbin/iptables -t mangle -D OUTPUT -p tcp --sport 32400 ! -d 192.168.88.0/24 -j MARK --set-mark 1, /sbin/ip rule add fwmark 1 table plexroute, /sbin/ip rule del fwmark 1 table plexroute
     ```
 
 ### 2. Runnning the script in a `cron` job
@@ -69,9 +71,9 @@ The first way is a little more robust in case IPs change but is has some securit
 
     ```
     # macro                                         command
-    @reboot                                         sleep 60 && /usr/local/bin/split_routes refresh plexroute 60 plex.tv app.plex.tv
+    @reboot                                         sleep 60 && /usr/local/bin/split_routes refresh plexroute 60 plex.tv app.plex.tv metadata.provider.plex.tv v4.plex.tv resources-cdn.plexapp.com meta.plex.tv download.plex.tv assets.plex.tv analytics.plex.tv plex.direct
     #       m       h       dom     mon     dow     command
-            00      12      *       *       *       /usr/local/bin/split_routes refresh plexroute 60 plex.tv app.plex.tv
+            00      12      *       *       *       /usr/local/bin/split_routes refresh plexroute 60 plex.tv app.plex.tv metadata.provider.plex.tv v4.plex.tv resources-cdn.plexapp.com meta.plex.tv download.plex.tv assets.plex.tv analytics.plex.tv plex.direct
     ```
 
     This example runs the script to refresh the routes at noon every day and on boot. The `sleep` might not be necessary but the idea is to allow Wireguard and Tailscale a little extra time since we can't trigger the script explicitly after they start.

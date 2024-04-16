@@ -1,31 +1,42 @@
 #!/bin/bash
 
 # Check if at least two arguments are provided (action + at least one domain)
-if [ $# -lt 4 ]; then
+if [ $# -lt 2 ]; then
+    if [ $# -eq 1 ]; then
+    ARGUMENTS="argument"
+    else
+    ARGUMENTS="arguments"
+    fi
+    echo "$# $ARGUMENTS found, at least 2 arguments are required"
     echo "Usage: $0 <action> <table> <pref> <domain1> [domain2] [...]"
     echo "action: add, del, refresh"
-    echo "Example: $0 refresh plexroute 60 plex.tv app.plex.tv"
+    echo "Examples: "
+    echo "$0 refresh someroutename 60 plex.tv app.plex.tv"
+    echo "$0 add someroutename 60 plex.tv app.plex.tv"
+    echo "$0 del someroutename"
     exit 1
 fi
 
 # Configuration variables
-ACTION=$1  				    # First argument is the action
-shift  					    # Remove the first argument
-TABLE=$1				    # Table to route through
-shift					    # Remove the first argument
-PREF=$1  				    # Preference for the rules
-shift					    # Remove the first argument, so now it should just be domains left
-GATEWAY="192.168.88.1"		# Gateway to route through
-INTERFACE="enp3s0"			# Interface to route through
-DOMAINS=("$@")  			# Remaining arguments are treated as domains
-echo action $ACTION
-echo table $TABLE
-echo pref $PREF
-echo domains ${DOMAINS[@]}
+ARGUMENTS=$#                    # Reuse arguments variable to store num arguments
+ACTION=$1                       # Action to perform
+TABLE=$2                        # Table to route through
+PREF=$3                         # Preference for the rules
+GATEWAY="192.168.0.1"           # Gateway to route through
+LOCAL_NETWORK="192.168.0.0/24"  # Local network to not mark
+INTERFACE="eth0"                # Interface to route through
+PORT=32400                      # Service port
+shift 3                         # Remove the handled arguments, so now it should just be domains left
+DOMAINS=("$@")                  # Remaining arguments are treated as domains
 
 # Function to clear existing rules and routes for the table
 clearRulesAndRoutes() {
     echo "Clearing existing rules and routes for table $TABLE..."
+
+    sudo iptables -t mangle -D PREROUTING -p tcp --dport $PORT -j MARK --set-mark 1
+    sudo iptables -t mangle -D OUTPUT -p tcp --sport $PORT ! -d $LOCAL_NETWORK -j MARK --set-mark 1
+    sudo /sbin/ip rule del fwmark 1 table $TABLE
+
     # Find rules associated with the 'plexroute' table and delete them
     /sbin/ip rule show | grep "lookup $TABLE" | while read -r rule; do
         # Extract the from and to parts
@@ -39,13 +50,14 @@ clearRulesAndRoutes() {
     /sbin/ip route show table $TABLE | while read -r route; do
         sudo /sbin/ip route del $route table $TABLE
     done
+
 }
 
 # Function to add routes and rules for each IP address of a domain
 addRoutesAndRules() {
     for domain in "${DOMAINS[@]}"; do
         echo "Processing domain: $domain"
-        
+
         # Get IP addresses for the domain
         IPs=$(dig +short $domain)
 
@@ -53,37 +65,49 @@ addRoutesAndRules() {
             echo "No IPs found for domain $domain. Skipping..."
             continue  # Skip to the next domain
         fi
-
+        sudo /sbin/ip route add default via $GATEWAY dev $INTERFACE table $TABLE
         # Add routes and rules for each IP address
         for ip in $IPs; do
             if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then  # Simple check for IPv4 address
                 echo "Adding route and rule for $ip..."
-                sudo /sbin/ip route add $ip via $GATEWAY dev $INTERFACE table $TABLE
                 sudo /sbin/ip rule add to $ip pref $PREF table $TABLE
             else
                 echo "Skipping non-IPv4 address: $ip"
             fi
         done
     done
+
+    echo Marking service traffic to avoid it being routed through the vpn
+    sudo iptables -t mangle -A PREROUTING -p tcp --dport $PORT -j MARK --set-mark 1
+    sudo iptables -t mangle -A OUTPUT -p tcp --sport $PORT ! -d $LOCAL_NETWORK -j MARK --set-mark 1
+    sudo /sbin/ip rule add fwmark 1 table $TABLE
 }
 
 # Main
 case $ACTION in
-    add)
-        addRoutesAndRules
-        ;;
+    add | refresh)
+        if [ $# -lt 1 ]; then
+            echo "\`$ACTION\` requires at least 4 arguments, $ARGUMENTS found"
+            echo "Example: $0 $ACTION someroutename 60 plex.tv app.plex.tv"
+	    exit
+        fi
+	case $ACTION in
+	    add)
+	        addRoutesAndRules
+		;;
+	    refresh)
+                clearRulesAndRoutes
+                addRoutesAndRules
+	        ;;
+	    *)
+		echo "Something weird happened handling \`$ACTION\`"
+        esac
+	;;
     del)
         clearRulesAndRoutes
         ;;
-    refresh)
-        clearRulesAndRoutes
-        addRoutesAndRules
-        ;;
     *)
-        echo "Invalid action specified. Please use 'add', 'del', or 'refresh'."
+        echo "Invalid action \`$ACTION\`specified. Please use 'add', 'del', or 'refresh'."
         exit 1
         ;;
 esac
-
-echo "Operation complete."
-
