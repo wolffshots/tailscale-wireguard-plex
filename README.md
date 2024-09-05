@@ -1,6 +1,8 @@
-# tailscale-wireguard-plex
+# Getting Tailscale and Wireguard playing together nicely
 
-Instructions and scripts for getting Tailscale to work nicely with a Wireguard VPN on Linux and optionally getting Plex to bypass both.
+Before I get into the details of how I worked out how to do this I have since found an alternative to these changes that may suit more people more is to use Wireguard and Tailscale in a Docker compose stack and then just use that Tailscale container as an exit node or alternatively the Wireguard container's network as a the network for whatever other container you want to route through it. See [compose.yml](./compose.yml) for how you could set something like that up.
+
+Instructions and scripts for getting Tailscale to work nicely with a Wireguard VPN on Linux and optionally getting Plex or another app to bypass both.
 
 The instructions are primarily aimed at my use case which is Ubuntu Server (so with `systemd`) but the basic idea and scripts should work with any Unix system that uses `iproute2` (or something similar).
 
@@ -36,7 +38,9 @@ If you're interested you can check the Tailscale table with `ip route show table
 
 If you set the Tailscale device as an exit node then connecting to it should allow you to use the Wireguard VPN connection as well.
 
-## Plex changes
+## Plex or other excluded routes changes
+
+You can follow similar steps to make any other app excluded from the Wireguard routing.
 
 You'll need to add some rules for Plex to your config and there are a couple ways of doing that. 
 The first way is a little more robust in case IPs change but is has some security considerations because it allows the `plex` user to change rules and routes without a password.
