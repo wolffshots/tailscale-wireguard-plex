@@ -1,4 +1,4 @@
-# tailscale-wireguard-plex
+# Getting Tailscale and Wireguard playing together nicely
 
 Before I get into the details of how I worked out how to do this I have since found an alternative to these changes that may suit more people more is to use Wireguard and Tailscale in a Docker compose stack and then just use that Tailscale container as an exit node or alternatively the Wireguard container's network as a the network for whatever other container you want to route through it. See [compose.yml](./compose.yml) for how you could set something like that up.
 
