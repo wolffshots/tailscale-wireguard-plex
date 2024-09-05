@@ -40,7 +40,7 @@ If you set the Tailscale device as an exit node then connecting to it should all
 
 ## Plex or other excluded routes changes
 
-You can follow similar steps to make app excluded from the Wireguard routing
+You can follow similar steps to make any other app excluded from the Wireguard routing.
 
 You'll need to add some rules for Plex to your config and there are a couple ways of doing that. 
 The first way is a little more robust in case IPs change but is has some security considerations because it allows the `plex` user to change rules and routes without a password.
