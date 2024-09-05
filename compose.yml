@@ -1,0 +1,87 @@
+# for this stack you will want to create a `.env` file next to this `compose.yml`
+# with timezone and authkey
+# for timezone you can view the available options by running `timedatectl list-timezones` 
+# or `timedatectl list-timezones | grep <your-continent>`
+# for the auth key you can go to https://login.tailscale.com/admin/settings/keys and
+# create a new key but make sure it is reusable 
+# for more details check out https://tailscale.com/kb/1085/auth-keys
+# your .env should look something like this:
+# TZ=Your/Timezone
+# TS_AUTHKEY=tskey-client-notAReal-OAuthClientSecret1Atawk
+name: dockertail
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      # for this path example the actual config file paths would look like this: 
+      # `./wireguard/config/wg_confs/wg0.conf`
+      # `./wireguard/config/wg_confs/wg1.conf`
+      # `./wireguard/config/wg_confs/wg2.conf`
+      # the wireguard container will bring all of them up but afaik it will
+      # only route through the default one
+      - ./wireguard/config:/config
+      - /lib/modules:/lib/modules
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      # user and group to run wireguard with
+      - PUID=1000
+      - PGID=1000
+      # see top of this file for timezone
+      - TZ=${TZ}
+    ports:
+      # this port will conflict with other wireguard setups so may need
+      # to be changed but I'm not sure how that would affect your configs
+      - 51820:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    networks:
+      default:
+        # you can change this if it clashes with one of your other networks
+        # but make sure to update it in the command in at the bottom of this
+        # file too
+        ipv4_address: 172.20.0.50 
+  tailscale:
+    image: ghcr.io/tailscale/tailscale:latest
+    container_name: tailscale
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /dev/net/tun:/dev/net/tun
+      # making a volume mapped to `/var/lib/tailscale` (the default state
+      # directory) is what allows this to be persistent
+      # if you update the right side here make sure to update
+      # TS_STATE_DIR below
+      - ./tailscale/state:/var/lib/tailscale
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      # explicitly set the state directory for persistence (even though this
+      # value is the default)
+      # if you change this here make sure to update the volume above as well
+      - TS_STATE_DIR=/var/lib/tailscale/
+      # see top of this file for details on the auth key
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      # enable this tailscale node to route traffic from your other nodes
+      # this need to be accepted in https://login.tailscale.com/admin/machines
+      - TS_EXTRA_ARGS=--advertise-exit-node
+      - TS_HOSTNAME=dockertail
+      # see top of this file for timezone
+      - TZ=${TZ}
+    depends_on:
+      - wireguard
+    # use the wireguard service as the network for tailscale
+    network_mode: service:wireguard
+    restart: unless-stopped
+networks:
+  default:
+    # create a network with something like this command:
+    # `docker network create --subnet 172.20.0.0/24 wgnet`
+    # change the subnet if it clashes with another network but
+    # if you change the subnet in this command then make sure to 
+    # update the ip of the wireguard container above
+    name: wgnet
+    external: true
