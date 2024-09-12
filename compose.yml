@@ -45,6 +45,14 @@ services:
         # but make sure to update it in the command in at the bottom of this
         # file too
         ipv4_address: 172.20.0.50 
+    healthcheck:
+      # modify `wg0` to whatever your config is called as that will be the name
+      # the interface that we want to check for
+      test: ["CMD-SHELL", "ip a show wg0 | grep wg0 || exit 1"]
+      interval: 30s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
   tailscale:
     image: ghcr.io/tailscale/tailscale:latest
     container_name: tailscale
@@ -81,7 +89,8 @@ services:
       # see top of this file for timezone
       - TZ=${TZ}
     depends_on:
-      - wireguard
+      wireguard:
+        condition: service_healthy
     # use the wireguard service as the network for tailscale
     network_mode: service:wireguard
     restart: unless-stopped
