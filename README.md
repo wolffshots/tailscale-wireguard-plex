@@ -1,6 +1,52 @@
 # Getting Tailscale and Wireguard playing together nicely
 
-Before I get into the details of how I worked out how to do this I have since found an alternative to these changes that may suit more people more is to use Wireguard and Tailscale in a Docker compose stack and then just use that Tailscale container as an exit node or alternatively the Wireguard container's network as a the network for whatever other container you want to route through it. See [compose.yml](./compose.yml) for how you could set something like that up.
+Update 2: I have since found a nice way to have everything containerised so you don't have to mess with networking on the host at all. You can see details at my repo over at [connectorr](https://github.com/wolffshots/connectorr) but the basic idea is a [Gluetun](https://github.com/qdm12/gluetun) container for VPN communication and then you can opt other stacks in by using the [connectorr](https://github.com/wolffshots/connectorr) to route traffic through the VPN by default but it has built in support for having certain subnets bypassed and can do stuff like health checks.
+I've included an example stack here with a [Gluetun](https://github.com/qdm12/gluetun) container and Tailscale container using it as a gateway for most communication except the local network or other Tailscale machines. Then I can use that Tailscale machine as an exit node from other devices when I want to route something through the VPN. If I want to route something through on the same machine then I just drop another [connectorr](https://github.com/wolffshots/connectorr) into whatever stack I want to route for.
+With this solution I can very easily opt other containers in to routing through the VPN and either leave Plex routing normally on the host or add it container that just isn't opted in.
+
+This is just an example, see [connectorr](https://github.com/wolffshots/connectorr) for more context
+```yml
+services:
+  tailscale:
+    image: tailscale/tailscale
+    container_name: tailscale
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - ./tailscale/state:/var/lib/tailscale
+    environment:
+      - TS_STATE_DIR=/var/lib/tailscale/
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_EXTRA_ARGS=--advertise-exit-node
+      - TS_HOSTNAME=${TS_HOSTNAME}
+      - TS_USERSPACE=true
+    network_mode: service:connectorr
+    restart: always
+    healthcheck:
+      test: tailscale status --peers=false --json | grep -q 'Online.*true'
+  connectorr:
+    image: ghcr.io/wolffshots/connectorr:latest
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY_IP=172.21.0.2
+      - BYPASS_IP=172.21.0.1
+      - BYPASS_SUBNETS=192.168.88.0/24
+    restart: unless-stopped
+    networks:
+      wgnet:
+        ipv4_address: 172.21.0.22
+networks:
+  wgnet:
+    external: true
+```
+
+---
+
+Update 1: Before I get into the details of how I worked out how to do this I have since found an alternative to these changes that may suit more people more is to use Wireguard and Tailscale in a Docker compose stack and then just use that Tailscale container as an exit node or alternatively the Wireguard container's network as a the network for whatever other container you want to route through it. See [compose.yml](./compose.yml) for how you could set something like that up.
+
+---
 
 Instructions and scripts for getting Tailscale to work nicely with a Wireguard VPN on Linux and optionally getting Plex or another app to bypass both.
 
